@@ -27,6 +27,7 @@ class Exoplanet():
 	st_coords = None
 	P = None
 	T0 = None
+	next_transit = None
 	
 	def __init__(self, st_name, pl_id, **kwargs):
 		"""

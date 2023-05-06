@@ -3,8 +3,16 @@ Discover ongoing and upcoming exoplanet transit events visible to you.
 
 An exoplanet "transit" occurs when a distant exoplanet crosses in front of its star from your point of view. This is one of the key ways that exoplanets are discovered and studied. 
 
-This is a WIP tool that can query multiple online databases to identify user-provided exoplanet names, determine information about the exoplanet, and use it to determine when that exoplanet will transit next. It can also take into account your location to determine if that transit event is visible or if (for example) the Sun will be up at that time.
+With this tool, you can input a planet name and the code will query the CDS Simbad Astronomical Database to determine its right ascension and declination. It will then crossmatch that against the NASA Exoplanet Archive in order to determine the known orbital ephemeris of the planet. Then, the next transit is determined automatically. 
 
-A full readme and Jupyter Notebook example to come with version 1.0.
+You can also specify an observation location (e.g., longitude, latitude, and altitude) and the code will determine the next transit that is visible to that specific location (if any). 
 
-Current version = 0.2
+This package relies on astropy and specifically its subpackage astroplan.
+
+Example call:
+
+>>>from exo_transit_tracker import next_transit
+>>>next_transit('Kepler-51', 'b').isot
+'2023-05-30T00:51:24.480'
+
+Current version = 1.0

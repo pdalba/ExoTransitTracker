@@ -1,12 +1,12 @@
 import numpy as np
-import os
-import sys
 import astropy
+import astropy.units as u
 from astropy.coordinates import EarthLocation
 import warnings
 
 from exo_transit_tracker.exoplanet import Exoplanet
 from exo_transit_tracker.utils import query_nea
+from exo_transit_tracker.visibility import calc_vis
 
 def next_transit(st_name, pl_id, source='NEA', P=None, T0=None, loc=None):
 	"""
@@ -16,41 +16,43 @@ def next_transit(st_name, pl_id, source='NEA', P=None, T0=None, loc=None):
 		------
 		
 			st_name: str
-				Name of the host star. Must be resolvable by the CDS Simbad service.
+				Name of the host star. Must be resolvable by the CDS
+				Simbad service.
 	
 			pl_id: str
 				Letter or identifier of the exoplanet.
 			
 			source: str
-				Where to draw the exoplanet transit ephemeris from. Options include:
-					'NEA': exoplanet data are downloaded from the NASA Exoplanet Archive
-						   and queried.
-					None: the transit ephemeris (P and T0) must be provided.
+				Where to draw the exoplanet transit ephemeris from. 
+					Options include:
+						'NEA': exoplanet data are downloaded from the 
+							   NASA Exoplanet Archive and queried.
+						None: the transit ephemeris (P and T0) must 
+							  be provided.
 				
 			P: float or NoneType
-				The orbital period (in days) for the planet. Must be provided if source is
-				None.
+				The orbital period (in days) for the planet. Must be
+				provided if source is None.
 			
 			T0: float or NoneType
-				The transit (or conjunction) time for the planet in Barycentric Julian Days.
-				Must be provided if source is None.
+				The transit (or conjunction) time for the planet in 
+				Barycentric Julian Days. Must be provided if source 
+				is None.
 		
-			loc: astropy.coordinates.EarthLocation
-				The location of the observer. If provided, the output will include the 
-				timing of the next transit for which any part of the transit is visible
-				to the observer (if any). 
+			loc: tuple / list or None
+				A tuple containing the longitude (in degrees), 
+				latitude (in degrees), and elevation (in meters) for 
+				the location on Earth to be treated as the observer.
+				If provided, the next_transit will be that which is 
+				visible to this observer.
 					
 		Outputs
 		-------
 	
-			nextTransit: list
-				A list containing the start, mid-point, and end times, as astropy.Time
-				objects, of the next transit of the input planet.
-			
-			nextVisTransit: list
-				A list containing the start, mid-point, and end times, as astropy.Time
-				objects, of the next transit with any amount of visibility to the input
-				observer for the input planet.			
+			nextTransit: astropy.time.Time
+				A Time object of the next transit mid-time for this planet, for
+				the given (or determined) ephemeris, visible from the given 
+				location (if applicable).			
 	"""
 
 	# Parse args
@@ -61,16 +63,23 @@ def next_transit(st_name, pl_id, source='NEA', P=None, T0=None, loc=None):
 			raise ValueError('Ephmeris must be provided if source is None.')
 	
 	if loc is not None:
-		if type(loc) != astropy.coordinates.earth.EarthLocation:
-			raise ValueError('Given loc is not an EarthLocation object.')
+		if len(loc) != 3:
+			msg = 'loc must a be 3 item tuple or list containing'
+			msg += 'longitude, latitude, and elevation.'
+			raise ValueError(msg)
+		try:
+			loc = EarthLocation.from_geodetic(loc[0], loc[1], height=loc[2])
+		except Exception as ee:
+			print(ee)
 			
 	# If source is NEA and ephemeris is given, default to ephemeris
 	if P is not None and T0 is not None and source == 'NEA':
-		warnings.warn('Using given ephemeris as opposed to ' \
-					  'querying NEA.')
+		msg = 'Using given ephemeris as opposed to '
+		msg += 'querying NEA.'
+		warnings.warn(msg)
 		source = None
 	
-	# Create an Exoplanet object
+	# Create an Exoplanet object and calculate the next transit from now
 	xo = Exoplanet(st_name, pl_id, P=P, T0=T0)
 	 	
 	# CASE: determine transit timing with given ephemeris
@@ -80,7 +89,22 @@ def next_transit(st_name, pl_id, source='NEA', P=None, T0=None, loc=None):
 		
 	# CASE: determine transit timing with given ephemeris with a location
 	elif source is None and loc is not None:
-		pass
+		# Query simbad for hostName
+		xo.get_radec_simbad()
+		xo.simbad_known = True
+		
+		# Calculate next transit time
+		xo.ephemeris_to_next_transit()
+		
+		# Calculate visibility
+		vis = calc_vis(xo, loc)
+		
+		if not vis:
+			print('Sorry, this star is never visible from this location.' \
+				  ' No transits visible.')
+			return
+		
+		return xo.next_transit
 		
 	# CASE: get ephemeris from NEA
 	else:
@@ -103,9 +127,10 @@ def next_transit(st_name, pl_id, source='NEA', P=None, T0=None, loc=None):
 								   min(df_coords.dist))['dist'].dropna().index
 		matchName = df_coords.loc[matchInd, 'pl_name'].values[0]
 		if xo.st_name not in matchName:
-			warnings.warn('Matched {} on'.format(xo.st_name) +
-						  ' the NEA to {}. '.format(matchName) +\
-						  'Assuming alias and proceeding.')
+			msg = 'Matched {} on'.format(xo.st_name)
+			msg += ' the NEA to {}. '.format(matchName)
+			msg += 'Assuming alias and proceeding.'
+			warnings.warn(msg)
 		
 		# Gather all the ephemerides for this planet from the
 		# NEA with another query. 
@@ -162,15 +187,24 @@ def next_transit(st_name, pl_id, source='NEA', P=None, T0=None, loc=None):
 					  ' No transits can be reported.')
 				return
 								
-		# If no location, determine the next transit
+		# Calculate the next transit from now
+		xo.ephemeris_to_next_transit()
+									
+		# If no location, simply return. Otherwise, check visibility
 		if loc is None:
-			xo.ephemeris_to_next_transit()
 			return xo.next_transit
 		else:
-			pass
-				
-		breakpoint()
-
+			# Calculate visibility
+			vis = calc_vis(xo, loc)
+		
+			if not vis:
+				print('Sorry, this star is never visible from this location.' \
+				  	  ' No transits visible.')
+				return
+		
+			return xo.next_transit
+			
+			
 
 
 

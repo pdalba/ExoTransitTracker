@@ -11,8 +11,8 @@ This package relies on astropy and specifically its subpackage astroplan.
 
 Example call:
 
->>>from exo_transit_tracker import next_transit
->>>next_transit('Kepler-51', 'b').isot
-'2023-05-30T00:51:24.480'
+    from exo_transit_tracker import next_transit
+    next_transit('Kepler-51', 'b').isot
+      '2023-05-30T00:51:24.480'
 
 Current version = 1.0
